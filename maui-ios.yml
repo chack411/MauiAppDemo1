@@ -1,0 +1,62 @@
+# Xamarin.iOS
+# Build a Xamarin.iOS project.
+# Add steps that install certificates, test, sign, and distribute an app, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/xamarin
+
+trigger: none
+
+variables:
+  # Agent VM image name
+  vmImageName: 'macos-latest'
+
+  # Working Directory
+  workingDirectory: '$(System.DefaultWorkingDirectory)/MauiAppDemo1'
+
+  # .NET Core configrations
+  dotnetVersion: '6.0.x'
+  targetFramework: 'net6.0-ios'
+  buildConfiguration: 'Release'
+
+pool:
+  vmImage: $(vmImageName)
+
+steps:
+- task: NuGetToolInstaller@1
+- task: UseDotNet@2
+  displayName: 'Install latest .NET SDK'
+  inputs:
+    packageType: sdk
+    version: $(dotnetVersion)
+    includePreviewVersions: true
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+- task: CmdLine@2
+  displayName: 'Install MAUI'
+  inputs:
+    script: 'dotnet workload install maui'
+- task: DotNetCoreCLI@2
+  displayName: 'dotnet build'
+  inputs:
+    command: 'build'
+    publishWebProjects: false
+    projects: |
+      $(workingDirectory)/*.csproj
+    arguments: '--framework $(targetFramework) --configuration $(buildConfiguration) --output $(workingDirectory)/publish_output /p:ArchiveOnBuild=true /p:EnableAssemblyILStripping=false'
+    zipAfterPublish: false
+    modifyOutputPath: false
+
+- publish: $(workingDirectory)/publish_output
+  artifact: drop
+  displayName: 'Publish Artifact'
+
+# - task: CopyFiles@2
+#   inputs:
+#     SourceFolder: '$(Agent.BuildDirectory)'
+#     Contents: '**/*.ipa'
+#     TargetFolder: '$(Build.ArtifactStagingDirectory)'
+#     flattenFolders: true
+
+# - task: PublishBuildArtifacts@1
+#   inputs:
+#     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+#     ArtifactName: 'drop'
+#     publishLocation: 'Container'

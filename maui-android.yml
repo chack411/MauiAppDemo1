@@ -1,0 +1,118 @@
+# .NET MAUI pipeline
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+variables:
+  # Agent VM image name
+  vmImageName: 'windows-2022'
+
+  # Working Directory
+  workingDirectory: '$(System.DefaultWorkingDirectory)\MauiAppDemo1'
+  appiumDirectory: '$(System.DefaultWorkingDirectory)\AppiumJava'
+
+  # .NET Core configrations
+  dotnetVersion: '6.0.x'
+  targetFramework: 'net6.0-android'
+  buildConfiguration: 'Release'
+
+stages:
+- stage: Build
+  displayName: 'Build MAUI'
+  jobs:
+  - job: Android
+    displayName: 'Android Build'
+    pool:
+#      name: MAUI
+      vmImage: $(vmImageName)
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Install latest .NET SDK'
+      inputs:
+        packageType: sdk
+        version: $(dotnetVersion)
+        includePreviewVersions: true
+        installationPath: $(Agent.ToolsDirectory)\dotnet
+    - task: CmdLine@2
+      displayName: 'Install MAUI'
+      inputs:
+        script: 'dotnet workload install maui'
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet build'
+      inputs:
+        command: 'build'
+        publishWebProjects: false
+        projects: |
+          $(workingDirectory)\*.csproj
+        arguments: --framework $(targetFramework) --configuration $(buildConfiguration) --output $(workingDirectory)\publish_output
+    - publish: $(workingDirectory)\publish_output
+      artifact: drop
+      displayName: 'Publish Artifact'
+    - publish: $(appiumDirectory)
+      artifact: appium
+      displayName: 'Publish Appium Artifact'
+
+- stage: Test
+  displayName: 'Test MAUI'
+  jobs:
+  - job: Android
+    displayName: 'Test Android'
+    pool:
+#      name: MAUI
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: none
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Artifact'
+    - task: CmdLine@2
+      displayName: 'mvn package'
+      inputs:
+        script: mvn clean package -DskipTests -P prepare-for-upload
+        workingDirectory: $(Pipeline.Workspace)\appium
+    - task: UseNode@1
+      displayName: 'Use Node 10.15.1'
+      inputs:
+        version: '10.15.1'
+    - task: AppCenterTest@1
+      displayName: 'App Center Test'
+      inputs:
+        enablePrepare: true
+        appFile: '$(Pipeline.Workspace)\drop\com.companyname.mauiappdemo1-Signed.apk'
+        artifactsDirectory: '$(Build.ArtifactStagingDirectory)\AppCenterTest'
+        frameworkOption: 'appium'
+        appiumBuildDirectory: '$(Pipeline.Workspace)\appium\target\upload'
+        credentialsOption: 'serviceEndpoint'
+        serverEndpoint: 'AppCenter User Token'
+        appSlug: 'akirain/MauiAppDemo1-Android'
+        devices: 'akirain/android-devices'
+        localeOption: 'en_US'
+        skipWaitingForResults: false
+        # showDebugOutput: true
+
+- stage: Distribute
+  displayName: 'Distribute MAUI Apps'
+  jobs:
+  - job: Android
+    displayName: 'Distribute Android Apps'
+    pool:
+#      name: MAUI
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: none
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Artifact'
+      inputs:
+        artifact: drop
+        targetPath: $(Pipeline.Workspace)\drop
+    - task: AppCenterDistribute@3
+      displayName: 'App Center Distribute'
+      inputs:
+        serverEndpoint: 'AppCenter'
+        appSlug: 'akirain/MauiAppDemo1-Android'
+        appFile: '$(Pipeline.Workspace)\drop\*.apk'
+        buildVersion: '0.0.1'
+        releaseNotesOption: 'input'
+        releaseNotesInput: 'Test Release'
+        destinationType: 'groups'
+        # distributionGroupId: 'Collaborators'
